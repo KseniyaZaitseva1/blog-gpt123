@@ -1,10 +1,9 @@
-# app.py
-
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import openai
-import httpx  # Асинхронная библиотека для HTTP-запросов
+import httpx
+from starlette.concurrency import run_in_threadpool
 
 app = FastAPI()
 
@@ -39,13 +38,15 @@ async def get_recent_news(topic):
     return "\n".join(recent_news)
 
 # Синхронная функция для генерации заголовка, мета-описания и контента
-def generate_post(topic):
-    recent_news = get_recent_news(topic)  # Вызов новостей остаётся асинхронным
+async def generate_post(topic):
+    # Асинхронный вызов получения новостей
+    recent_news = await get_recent_news(topic)
 
     # Генерация заголовка
     prompt_title = f"Придумайте привлекательный заголовок для поста на тему: {topic}"
     try:
-        response_title = openai.ChatCompletion.create(
+        # Вызов OpenAI в пуле потоков
+        response_title = await run_in_threadpool(openai.ChatCompletion.create,
             model="gpt-4",
             messages=[{"role": "user", "content": prompt_title}],
             max_tokens=30,
@@ -59,7 +60,8 @@ def generate_post(topic):
     # Генерация мета-описания
     prompt_meta = f"Напишите краткое, но информативное мета-описание для поста с заголовком: {title}"
     try:
-        response_meta = openai.ChatCompletion.create(
+        # Вызов OpenAI в пуле потоков
+        response_meta = await run_in_threadpool(openai.ChatCompletion.create,
             model="gpt-4",
             messages=[{"role": "user", "content": prompt_meta}],
             max_tokens=50,
@@ -77,7 +79,8 @@ def generate_post(topic):
         "Используйте короткие абзацы, подзаголовки, примеры и ключевые слова для лучшего восприятия и SEO-оптимизации."
     )
     try:
-        response_post = openai.ChatCompletion.create(
+        # Вызов OpenAI в пуле потоков
+        response_post = await run_in_threadpool(openai.ChatCompletion.create,
             model="gpt-4",
             messages=[{"role": "user", "content": prompt_post}],
             max_tokens=500,
@@ -96,9 +99,7 @@ def generate_post(topic):
 
 @app.post("/generate-post")
 async def generate_post_api(topic: Topic):
-    # Поскольку OpenAI методы синхронные, мы вызываем синхронную функцию через `run_in_threadpool`
-    from starlette.concurrency import run_in_threadpool
-    generated_post = await run_in_threadpool(generate_post, topic.topic)
+    generated_post = await generate_post(topic.topic)
     return generated_post
 
 @app.get("/heartbeat")
